@@ -1,0 +1,61 @@
+name: Build & Attach Release Assets
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            suffix: windows
+            extension: .zip
+            content_type: application/zip
+          - os: ubuntu-latest
+            suffix: linux
+            extension: .tar.gz
+            content_type: application/gzip
+          - os: macos-latest
+            suffix: macos
+            extension: .tar.gz
+            content_type: application/gzip
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only on Windows
+      - name: Setup MSYS2
+        if: ${{ matrix.os == 'windows-latest' }}
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc make zip tar
+
+      # Build under MSYS2 or bash
+      - name: Build & package
+        if: ${{ matrix.os == 'windows-latest' }}
+        shell: msys2 {0}
+        run: |
+          make clean
+          make package VERSION=${{ github.event.release.tag_name }}
+
+      - name: Build & package
+        if: ${{ matrix.os != 'windows-latest' }}
+        shell: bash
+        run: |
+          make clean
+          make package VERSION=${{ github.event.release.tag_name }}
+
+      - name: Upload via GH CLI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" --clobber ssp-${{ github.event.release.tag_name }}-${{ matrix.suffix }}${{ matrix.extension }}
